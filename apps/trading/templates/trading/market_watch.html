@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Market Watch - MCX</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        @keyframes priceBlinkUp {
+            0% { color: rgb(0, 0, 0); }
+            50% { color: rgb(40, 167, 70); }
+            100% { color: rgb(0, 0, 0); }
+        }
+        
+        @keyframes priceBlinkDown {
+            0% { color: rgb(0, 0, 0); }
+            50% { color: rgb(220, 53, 70); }
+            100% { color: rgb(0, 0, 0); }
+        }
+        
+        .price-blink-up {
+            animation: priceBlinkUp 2s ease;
+        }
+        
+        .price-blink-down {
+            animation: priceBlinkDown 2s ease;
+        }
+        .market-watch {
+            background: #fff;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #dee2e6;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .up {
+            color: #28a745;
+        }
+        .down {
+            color: #dc3545;
+        }
+        .symbol {
+            font-weight: bold;
+        }
+        .last-updated {
+            color: #6c757d;
+            font-size: 0.9em;
+            text-align: right;
+            margin-top: 10px;
+        }
+        .price {
+            font-family: 'Courier New', monospace;
+        }
+        .change {
+            font-weight: bold;
+        }
+        .bid-ask {
+            color: #495057;
+        }
+    </style>
+</head>
+<body>
+    <div class="market-watch">
+        <h2>MCX Market Watch</h2>
+        <table id="market-table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>LTP</th>
+                    <th>Change</th>
+                    <th>Bid</th>
+                    <th>Ask</th>
+                    <th>High</th>
+                    <th>Low</th>
+                    <th>Volume</th>
+                </tr>
+            </thead>
+            <tbody id="market-data">
+                <!-- Data will be populated by WebSocket -->
+            </tbody>
+        </table>
+        <div class="last-updated" id="last-updated"></div>
+    </div>
+
+    <script>
+        // For CodeSandbox environment
+        const wsUrl = window.location.hostname.includes('csb.app') 
+            ? 'wss://fp3zfy-8000.csb.app/ws/trading/market-data/'
+            : (window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/trading/market-data/';
+        const ws = new WebSocket(wsUrl);
+        const marketData = {};
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'market_data') {
+                updateMarketData(data.symbol, data.data);
+            }
+        };
+
+        function updateMarketData(symbol, data) {
+            const oldhigh = marketData[symbol]?.high || data.high;
+            const oldlow = marketData[symbol]?.low || data.low;
+            marketData[symbol] = data;
+            
+            let row = document.getElementById('row-' + symbol);
+            if (!row) {
+                row = document.createElement('tr');
+                row.id = 'row-' + symbol;
+                document.getElementById('market-data').appendChild(row);
+            }
+
+            const priceChange = parseFloat(data.last_price) - parseFloat(data.open);
+            const changePercent = (priceChange / parseFloat(data.open) * 100).toFixed(2);
+            const priceDirection = parseFloat(data.high) > parseFloat(oldhigh) ? 'up' : 'down';
+            const priceDirectionlow = parseFloat(data.low) > parseFloat(oldlow) ? 'up' : 'down';
+
+            row.innerHTML = `
+                <td class="symbol">${symbol}</td>
+                <td class="price ${priceDirection}">${parseFloat(data.last_price).toFixed(2)}</td>
+                <td class="change ${priceChange >= 0 ? 'up' : 'down'}">
+                    ${priceChange >= 0 ? '+' : ''}${priceChange.toFixed(2)} (${changePercent}%)
+                </td>
+                <td class="bid-ask">${parseFloat(data.bid).toFixed(2)}</td>
+                <td class="bid-ask">${parseFloat(data.ask).toFixed(2)}</td>
+                <td class="high">${parseFloat(data.high).toFixed(2)}</td>
+                <td class="low">${parseFloat(data.low).toFixed(2)}</td>
+                <td>${data.volume || '0'}</td>
+            `;
+
+            // Only add blinking animation if price actually changed
+            if (parseFloat(data.high) !== parseFloat(oldhigh)) {
+                const priceCell = row.querySelector('.high');
+                if (priceCell) {
+                    const animationClass = priceDirection === 'up' ? 'price-blink-up' : 'price-blink-down';
+                    priceCell.classList.add(animationClass);
+                    setTimeout(() => {
+                        console.log(animationClass);
+                        priceCell.classList.remove(animationClass);
+                    }, 3000);
+                }
+            }
+
+            if (parseFloat(data.low) !== parseFloat(oldlow)) {
+                const priceCell = row.querySelector('.low');
+                if (priceCell) {
+                    const animationClass = priceDirectionlow === 'up' ? 'price-blink-up' : 'price-blink-down';
+                    priceCell.classList.add(animationClass);
+                    setTimeout(() => {
+                        console.log(animationClass);
+                        priceCell.classList.remove(animationClass);
+                    }, 3000);
+                }
+            }
+
+            document.getElementById('last-updated').textContent = 
+                'Last Updated: ' + new Date().toLocaleTimeString();
+        }
+
+        ws.onopen = function(e) {
+            console.log('WebSocket connection established');
+        };
+
+        ws.onclose = function(e) {
+            console.log('WebSocket closed with code:', e.code, 'reason:', e.reason);
+            console.log('Attempting to reconnect in 5 seconds...');
+            setTimeout(function() {
+                console.log('Reloading page to reconnect...');
+                window.location.reload();
+            }, 5000);
+        };
+
+        ws.onerror = function(err) {
+            console.error('WebSocket error:', err);
+            console.error('WebSocket readyState:', ws.readyState);
+            console.error('Current URL:', wsUrl);
+            ws.close();
+        };
+    </script>
+</body>
+</html>
